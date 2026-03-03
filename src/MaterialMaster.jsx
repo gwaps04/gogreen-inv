@@ -152,6 +152,7 @@ function MaterialMaster() {
                           <option value="Plastic Tox">Plastic Tox</option>
                           <option value="Metal Screw">Metal Screw</option>
                           <option value="Scotchtape">Scotchtape</option>
+                           <option value="Roof Sealant">Roof Sealant</option>
               </select>
             </div>
 
