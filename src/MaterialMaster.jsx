@@ -147,12 +147,7 @@ function MaterialMaster() {
                 <option value="Raceway Materials">Raceway Materials</option>
                   <option value="Mounting Kits">Mounting Kits</option>
                     <option value="Breaker">Breaker</option>
-                      <option value="Cable Tie">Cable Tie</option>
-                       <option value="Electrical Tape">Electrical Tape</option>
-                          <option value="Plastic Tox">Plastic Tox</option>
-                          <option value="Metal Screw">Metal Screw</option>
-                          <option value="Scotchtape">Scotchtape</option>
-                           <option value="Roof Sealant">Roof Sealant</option>
+                      <option value="Protective">Protective</option>
               </select>
             </div>
 
