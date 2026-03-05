@@ -176,6 +176,7 @@ function MaterialMaster() {
                 <option value="Meters (m)">Meters (m)</option>
                 <option value="Sets">Sets</option>
                 <option value="Rolls">Rolls</option>
+                  <option value="Pack">Pack</option>
               </select>
             </div>
 
