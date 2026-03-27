@@ -22,11 +22,10 @@ function StockOrders() {
   const [editItems, setEditItems] = useState([]);
   
   const [currentMaterial, setCurrentMaterial] = useState('');
-  const [currentCategory, setCurrentCategory] = useState(''); // NEW: Track category dropdown
+  const [currentCategory, setCurrentCategory] = useState(''); 
   const [currentQty, setCurrentQty] = useState(1);
   const [userRole, setUserRole] = useState(null);
 
-  // --- PASSWORD VERIFICATION STATES ---
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [pendingStatusUpdate, setPendingStatusUpdate] = useState(null);
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -75,7 +74,7 @@ function StockOrders() {
     const tableData = order.stock_order_items.map(item => [
       item.materials.material_name,
       item.materials.specs || 'N/A',
-      item.category || 'N/A', // Including category in PDF
+      item.category || 'N/A',
       item.quantity,
       item.materials.unit_of_measure
     ]);
@@ -104,7 +103,7 @@ function StockOrders() {
       } else {
         await supabase.from('inventory').insert([{
           item_name: item.materials.material_name,
-          category: item.category, // Use category from order item
+          category: item.category,
           qty: item.quantity,
           item_type: item.materials.unit_of_measure,
           date_of_arrival: new Date().toISOString().split('T')[0]
@@ -115,7 +114,6 @@ function StockOrders() {
 
   const handleStatusChangeAttempt = (order, newStatus) => {
     const criticalStatuses = ['Stock Order Closed Inbound', 'Stock Order (cancelled)'];
-    
     if (criticalStatuses.includes(newStatus)) {
       setPendingStatusUpdate({ orderId: order.id, status: newStatus, fullOrder: order });
       setShowPasswordModal(true);
@@ -126,13 +124,11 @@ function StockOrders() {
 
   const updateStatus = async (orderId, newStatus, fullOrder = null) => {
     const { error } = await supabase.from('stock_orders').update({ status: newStatus }).eq('id', orderId);
-    
     if (error) {
         alert(error.message);
         fetchOrderHistory();
         return;
     }
-
     if (newStatus === 'Stock Order Closed Inbound') {
         const order = fullOrder || history.find(h => h.id === orderId);
         await syncToInventory(order.stock_order_items);
@@ -140,29 +136,23 @@ function StockOrders() {
     } else if (newStatus === 'Stock Order (cancelled)') {
         alert("Order successfully cancelled.");
     }
-    
     fetchOrderHistory();
   };
 
   const verifyAndSubmitStatus = async (e) => {
     e.preventDefault();
     setIsVerifying(true);
-    
     const { data: { user } } = await supabase.auth.getUser();
-    
     const { error } = await supabase.auth.signInWithPassword({
       email: user.email,
       password: confirmPassword,
     });
-
     if (error) {
       alert("Verification Failed: Incorrect password.");
       setIsVerifying(false);
       return;
     }
-
     await updateStatus(pendingStatusUpdate.orderId, pendingStatusUpdate.status, pendingStatusUpdate.fullOrder);
-    
     setShowPasswordModal(false);
     setConfirmPassword('');
     setPendingStatusUpdate(null);
@@ -181,18 +171,28 @@ function StockOrders() {
     }
   };
 
+  // MENTOR NOTE: This function now auto-links category based on material selection
+  const handleMaterialChange = (materialId) => {
+    setCurrentMaterial(materialId);
+    const mat = materials.find(m => m.id === parseInt(materialId));
+    if (mat) {
+        setCurrentCategory(mat.category); // Auto-set category from material master
+    } else {
+        setCurrentCategory('');
+    }
+  };
+
   const handleAddMaterialToOrder = () => {
     const mat = materials.find(m => m.id === parseInt(currentMaterial));
-    // Require category for the item to be added to the list
-    if (!mat || !currentCategory) {
-      alert("Please select both a Material and a Category.");
+    if (!mat) {
+      alert("Please select a Material.");
       return;
     }
     setOrderItems([...orderItems, { 
       material_id: mat.id, 
       name: mat.material_name, 
       qty: currentQty,
-      category: currentCategory 
+      category: currentCategory // Now fixed to the material master value
     }]);
     setCurrentMaterial(''); 
     setCurrentCategory(''); 
@@ -202,7 +202,6 @@ function StockOrders() {
   const finalizeOrder = async () => {
     const orderNo = `SO-${Date.now().toString().slice(-6)}`;
     const { data: { user } } = await supabase.auth.getUser();
-    
     const { data: so, error: soError } = await supabase
         .from('stock_orders')
         .insert([{ 
@@ -212,13 +211,10 @@ function StockOrders() {
             status: 'Pending Approval' 
         }])
         .select();
-
     if (soError) {
         alert(soError.message);
         return;
     }
-
-    // Insert order items including the recorded category
     const { error: itemsError } = await supabase
         .from('stock_order_items')
         .insert(orderItems.map(item => ({ 
@@ -227,7 +223,6 @@ function StockOrders() {
             quantity: item.qty,
             category: item.category 
         })));
-
     if (itemsError) {
         alert(itemsError.message);
     } else {
@@ -239,15 +234,13 @@ function StockOrders() {
 
   const updateOrder = async () => {
     if (STATUS_CONFIG[editingOrder.status].locked) return; 
-
     await supabase.from('stock_order_items').delete().eq('stock_order_id', editingOrder.id);
     await supabase.from('stock_order_items').insert(editItems.map(item => ({ 
       stock_order_id: editingOrder.id, 
       material_id: item.material_id, 
       quantity: item.qty,
-      category: item.category // Preserve category during edits
+      category: item.category 
     })));
-    
     await supabase.from('stock_orders').update({ total_items: editItems.length }).eq('id', editingOrder.id);
     setShowEditModal(false);
     fetchOrderHistory();
@@ -257,7 +250,6 @@ function StockOrders() {
 
   return (
     <div className="row g-4 text-dark">
-      {/* SUMMARY STATS */}
       <div className="col-12">
         <div className="row g-2 mb-2">
           {Object.entries(STATUS_CONFIG).map(([status, style]) => (
@@ -271,21 +263,20 @@ function StockOrders() {
         </div>
       </div>
 
-      {/* CREATE NEW ORDER (Left Side) */}
       <div className="col-12 col-lg-4">
         <div className="card shadow-sm border-0 p-4 h-100">
           <h5 className="fw-bold text-success mb-4">Create New Order</h5>
           <div className="p-3 bg-light rounded border mb-3">
             <label className="small fw-bold text-muted text-uppercase mb-1">Select Material *</label>
-            <select className="form-select mb-2" value={currentMaterial} onChange={(e) => setCurrentMaterial(e.target.value)}>
+            <select className="form-select mb-2" value={currentMaterial} onChange={(e) => handleMaterialChange(e.target.value)}>
               <option value="">-- Choose Item --</option>
               {materials.map(m => <option key={m.id} value={m.id}>{m.material_name}</option>)}
             </select>
 
-            {/* Category Dropdown - Situation 1: Placed below material */}
-            <label className="small fw-bold text-muted text-uppercase mb-1 mt-2">Category *</label>
-            <select className="form-select mb-2" value={currentCategory} onChange={(e) => setCurrentCategory(e.target.value)} required>
-              <option value="">-- Select Category --</option>
+            {/* Situation 1: Category dropdown is now disabled to prevent manual changes */}
+            <label className="small fw-bold text-muted text-uppercase mb-1 mt-2">Designated Category</label>
+            <select className="form-select mb-2 bg-light shadow-none" value={currentCategory} disabled>
+              <option value="">{currentCategory || '-- No Category --'}</option>
               <option value="Consumables">Consumables</option>
               <option value="Outdoor">Outdoor</option>
               <option value="Indoor">Indoor</option>
@@ -313,7 +304,6 @@ function StockOrders() {
         </div>
       </div>
 
-      {/* ORDER HISTORY (Right Side) */}
       <div className="col-12 col-lg-8">
         <div className="card shadow-sm border-0 p-4">
           <h5 className="fw-bold mb-4">Order History</h5>
@@ -326,7 +316,6 @@ function StockOrders() {
                 {history.filter(h => h.order_number.toLowerCase().includes(searchTerm.toLowerCase())).map(h => {
                   const isLocked = STATUS_CONFIG[h.status]?.locked;
                   const isTerminal = h.status === 'Stock Order Closed Inbound' || h.status === 'Stock Order (cancelled)'; 
-                  
                   return (
                     <tr key={h.id}>
                       <td>
@@ -370,7 +359,7 @@ function StockOrders() {
         </div>
       </div>
 
-      {/* VERIFICATION MODAL */}
+      {/* VERIFICATION MODAL remains unchanged */}
       {showPasswordModal && (
         <div className="modal show d-block" style={{backgroundColor: 'rgba(0,0,0,0.85)'}}>
           <div className="modal-dialog modal-dialog-centered">
@@ -398,7 +387,7 @@ function StockOrders() {
         </div>
       )}
 
-      {/* EDIT MODAL */}
+      {/* EDIT MODAL: Category logic also locked here */}
       {showEditModal && (
         <div className="modal show d-block" style={{backgroundColor: 'rgba(0,0,0,0.7)'}}>
           <div className="modal-dialog modal-lg modal-dialog-centered">
@@ -416,30 +405,20 @@ function StockOrders() {
                 )}
                 {!STATUS_CONFIG[editingOrder.status].locked && (
                     <div className="row g-2 mb-4 bg-light p-2 rounded">
-                        <div className="col-md-5">
-                            <select className="form-select form-select-sm" value={currentMaterial} onChange={(e) => setCurrentMaterial(e.target.value)}>
+                        <div className="col-md-7">
+                            <select className="form-select form-select-sm" value={currentMaterial} onChange={(e) => handleMaterialChange(e.target.value)}>
                                 <option value="">-- Add Material --</option>
                                 {materials.map(m => <option key={m.id} value={m.id}>{m.material_name}</option>)}
                             </select>
                         </div>
                         <div className="col-md-3">
-                             <select className="form-select form-select-sm" value={currentCategory} onChange={(e) => setCurrentCategory(e.target.value)}>
-                                <option value="">-- Category --</option>
-                                <option value="Consumables">Consumables</option>
-                                <option value="Outdoor">Outdoor</option>
-                                <option value="Indoor">Indoor</option>
-                                <option value="Protective Devices">Protective Devices</option>
+                            {/* Disabled Category in Edit Modal */}
+                            <select className="form-select form-select-sm bg-light shadow-none" value={currentCategory} disabled>
+                                <option value="">{currentCategory || 'Category'}</option>
                             </select>
                         </div>
                         <div className="col-md-2">
-                            <input type="number" className="form-control form-control-sm" placeholder="Qty" value={currentQty} onChange={(e) => setCurrentQty(parseInt(e.target.value))} />
-                        </div>
-                        <div className="col-md-2">
-                            <button className="btn btn-sm btn-success w-100" onClick={() => {
-                                const mat = materials.find(m => m.id === parseInt(currentMaterial));
-                                if(mat && currentCategory) setEditItems([...editItems, { material_id: mat.id, name: mat.material_name, qty: currentQty, category: currentCategory }]);
-                                setCurrentMaterial(''); setCurrentCategory(''); setCurrentQty(1);
-                            }}>Add</button>
+                            <button className="btn btn-sm btn-success w-100 fw-bold" onClick={handleAddMaterialToOrder}>Add</button>
                         </div>
                     </div>
                 )}
