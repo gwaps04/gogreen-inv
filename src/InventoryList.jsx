@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+// 1. SITUATION: Import PDF libraries
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 function InventoryList() {
   const [inventory, setInventory] = useState([]);
@@ -8,7 +11,6 @@ function InventoryList() {
   const [editingItem, setEditingItem] = useState(null);
   const [userRole, setUserRole] = useState(null);
 
-  // --- SECURITY STATES ---
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -29,11 +31,54 @@ function InventoryList() {
     const { data, error } = await supabase
       .from('inventory')
       .select('*')
-      .order('qty', { ascending: true }); // Prioritize low stock items at the top
+      .order('qty', { ascending: true }); 
       
     if (error) console.error('Error:', error);
     else setInventory(data || []);
     setLoading(false);
+  };
+
+  // 1. SITUATION: PDF Generation Logic
+  const downloadInventoryReport = () => {
+    const doc = new jsPDF();
+    
+    // Header Section
+    doc.setFontSize(18);
+    doc.text("GO GREEN SOLAR - INVENTORY REPORT", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 14, 28);
+    doc.text(`Total Items Tracked: ${inventory.length}`, 14, 34);
+
+    // Prepare table data from existing inventory state
+    const tableData = inventory.map(item => {
+      // Logic for Status text
+      let status = "HEALTHY";
+      if (item.qty === 0) status = "OUT OF STOCK";
+      else if (item.qty < 5) status = "LOW STOCK";
+
+      return [
+        item.item_name,
+        item.classification || 'N/A',
+        item.category || 'N/A',
+        item.qty,
+        status
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Material Name', 'Classification', 'Category', 'Qty', 'Status']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [25, 135, 84] }, // Success Green
+      styles: { fontSize: 9 },
+      columnStyles: {
+        3: { halign: 'center' },
+        4: { fontStyle: 'bold' }
+      }
+    });
+
+    doc.save(`Inventory_Report_${Date.now()}.pdf`);
   };
 
   const handleDeleteAttempt = (id) => {
@@ -107,7 +152,6 @@ function InventoryList() {
 
   const filteredInventory = inventory.filter(i => i.item_name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  // 4. Situation: Inventory Reminders Logic
   const lowStockItems = inventory.filter(i => i.qty > 0 && i.qty < 5);
   const outOfStockItems = inventory.filter(i => i.qty === 0);
 
@@ -115,16 +159,25 @@ function InventoryList() {
     <div className="card shadow-sm border-0">
       <div className="card-header bg-white py-3 border-bottom-0">
         <div className="row align-items-center g-3">
-          <div className="col-12 col-md-6">
+          <div className="col-12 col-md-5">
             <h5 className="mb-0 fw-bold text-success"><i className="bi bi-box-seam me-2"></i>Current Stock Levels</h5>
           </div>
-          <div className="col-12 col-md-6">
+          <div className="col-12 col-md-4">
             <input type="text" className="form-control" placeholder="Search Material Name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          </div>
+          <div className="col-12 col-md-3">
+            {/* 1. SITUATION: Added PDF download button */}
+            <button 
+                className="btn btn-outline-success w-100 fw-bold shadow-sm" 
+                onClick={downloadInventoryReport}
+                disabled={inventory.length === 0}
+            >
+                <i className="bi bi-file-earmark-pdf-fill me-2"></i>Export List
+            </button>
           </div>
         </div>
       </div>
 
-      {/* 4. Situation: Low Stock Reminders Alert Section */}
       {(lowStockItems.length > 0 || outOfStockItems.length > 0) && (
         <div className="px-4 pt-2">
             {outOfStockItems.length > 0 && (
@@ -198,7 +251,6 @@ function InventoryList() {
                         </span>
                       </td>
                       <td className="text-center">
-                        {/* 1 & 4. Status Indicator */}
                         {item.qty === 0 ? <span className="text-danger fw-bold small">OUT OF STOCK</span> : item.qty < 5 ? <span className="text-warning fw-bold small">LOW STOCK</span> : <span className="text-success fw-bold small">HEALTHY</span>}
                       </td>
                       <td className="text-end pe-4">
@@ -216,6 +268,7 @@ function InventoryList() {
         </table>
       </div>
 
+      {/* Security Modal Unchanged */}
       {showPasswordModal && (
         <div className="modal show d-block" style={{backgroundColor: 'rgba(0,0,0,0.8)'}}>
           <div className="modal-dialog modal-dialog-centered">
