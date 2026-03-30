@@ -51,13 +51,20 @@ function Outbound() {
     setOutboundHistory(data?.filter(jo => jo.stock_movements.length > 0) || []);
   };
 
-  // --- 1. NEW: LOGGING HELPER FUNCTION ---
   const logActivity = async (userEmail, type, description) => {
     await supabase.from('activity_logs').insert([{
       user_email: userEmail,
       action_type: type,
       description: description
     }]);
+  };
+
+  // MENTOR NOTE: Standardizing the close logic
+  const closeAuthModal = () => {
+    setShowPasswordModal(false);
+    setConfirmPassword('');
+    setIsVerifying(false);
+    setPendingAction(null);
   };
 
   const toggleRow = (id) => {
@@ -100,11 +107,8 @@ function Outbound() {
       
       else if (pendingAction.type === 'DELETE_MOVEMENT') {
         const move = pendingAction.payload;
-        // Restoring stock
         await supabase.from('inventory').update({ qty: move.inventory.qty + move.quantity }).eq('id', move.inventory_id);
         await supabase.from('stock_movements').delete().eq('id', move.id);
-        
-        // 1. Log the deletion
         await logActivity(user.email, 'DELETE', `Deleted pull of ${move.quantity} ${move.inventory.item_name} from JO records.`);
       }
 
@@ -114,8 +118,6 @@ function Outbound() {
                 const diff = item.originalQty - item.currentQty;
                 await supabase.from('inventory').update({ qty: item.inventory_qty + diff }).eq('id', item.inventory_id);
                 await supabase.from('stock_movements').update({ quantity: item.currentQty }).eq('id', item.movement_id);
-                
-                // 1. Log the individual item change
                 await logActivity(user.email, 'EDIT', `Adjusted ${item.name} quantity from ${item.originalQty} to ${item.currentQty} for JO: ${editingJO.jo_number}`);
             }
         }
@@ -128,9 +130,7 @@ function Outbound() {
     } catch (err) {
       alert("Error: " + err.message);
     } finally {
-      setShowPasswordModal(false);
-      setConfirmPassword('');
-      setIsVerifying(false);
+      closeAuthModal(); // Use the helper to clean up
     }
   };
 
@@ -142,7 +142,7 @@ function Outbound() {
 
   return (
     <div className="row g-4 text-dark">
-      {/* TOP SECTION */}
+      {/* PREPARE STOCK-OUT SECTION */}
       <div className="col-12 col-lg-5">
         <div className="card shadow-sm border-0 p-4 h-100">
           <h5 className="fw-bold text-danger mb-4"><i className="bi bi-box-arrow-right me-2"></i>Prepare Stock-Out</h5>
@@ -164,6 +164,7 @@ function Outbound() {
         </div>
       </div>
 
+      {/* MATERIAL PICK LIST SECTION */}
       <div className="col-12 col-lg-7">
         <div className="card shadow-sm border-0 p-4 h-100">
           <h5 className="fw-bold mb-3">Material Pick List</h5>
@@ -185,7 +186,7 @@ function Outbound() {
         </div>
       </div>
 
-      {/* HISTORY SECTION */}
+      {/* OUTBOUND HISTORY SECTION */}
       <div className="col-12 mt-4">
         <div className="card shadow-sm border-0 p-4">
           <h5 className="fw-bold mb-4 text-success"><i className="bi bi-clock-history me-2"></i>Outbound Job Order Records</h5>
@@ -236,7 +237,7 @@ function Outbound() {
         </div>
       </div>
 
-      {/* EDIT MODAL */}
+      {/* EDIT MODAL remains unchanged for safety */}
       {showEditModal && (
         <div className="modal show d-block" style={{backgroundColor: 'rgba(0,0,0,0.85)'}}>
           <div className="modal-dialog modal-lg modal-dialog-centered">
@@ -268,20 +269,30 @@ function Outbound() {
         </div>
       )}
 
-      {/* SECURITY MODAL */}
+      {/* SECURITY MODAL - UPDATED WITH CLOSE BUTTON */}
       {showPasswordModal && (
         <div className="modal show d-block" style={{backgroundColor: 'rgba(0,0,0,0.9)'}}>
           <div className="modal-dialog modal-sm modal-dialog-centered">
             <div className="modal-content border-0 shadow-lg">
-              <div className="modal-header bg-dark text-white py-2"><h6 className="modal-title small fw-bold">Verify Identity</h6></div>
+              <div className="modal-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
+                <h6 className="modal-title small fw-bold">Verify Identity</h6>
+                {/* 1. SITUATION: Standard Close Button in Header */}
+                <button type="button" className="btn-close btn-close-white" style={{fontSize: '0.65rem'}} onClick={closeAuthModal}></button>
+              </div>
               <form onSubmit={handleAuthorizedAction}>
                 <div className="modal-body p-4 text-center">
                   <i className="bi bi-shield-lock text-warning fs-1 mb-2"></i>
                   <p className="small text-muted mb-3">Authorize this action with your password.</p>
                   <input type="password" className="form-control text-center border-success" placeholder="Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required autoFocus />
                 </div>
-                <div className="modal-footer border-0 p-2 bg-light d-flex justify-content-center">
-                  <button type="submit" className="btn btn-success btn-sm fw-bold w-75" disabled={isVerifying}>{isVerifying ? 'Verifying...' : 'Confirm'}</button>
+                <div className="modal-footer border-0 p-3 bg-light d-flex flex-column align-items-center">
+                  <button type="submit" className="btn btn-success btn-sm fw-bold w-100 mb-2" disabled={isVerifying}>
+                    {isVerifying ? 'Verifying...' : 'Confirm Action'}
+                  </button>
+                  {/* 1. SITUATION: Cancel Button Added */}
+                  <button type="button" className="btn btn-link btn-sm text-muted text-decoration-none" onClick={closeAuthModal}>
+                    Cancel Action
+                  </button>
                 </div>
               </form>
             </div>
