@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from './supabaseClient';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable'; 
@@ -36,6 +36,13 @@ function StockOrders() {
     fetchOrderHistory(); 
     getUserRole(); 
   }, []);
+
+  // LOGIC: Create a memoized sorted list of materials for the dropdowns
+  const sortedMaterials = useMemo(() => {
+    return [...materials].sort((a, b) => 
+      a.material_name.localeCompare(b.material_name)
+    );
+  }, [materials]);
 
   const getUserRole = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -171,12 +178,11 @@ function StockOrders() {
     }
   };
 
-  // MENTOR NOTE: This function now auto-links category based on material selection
   const handleMaterialChange = (materialId) => {
     setCurrentMaterial(materialId);
     const mat = materials.find(m => m.id === parseInt(materialId));
     if (mat) {
-        setCurrentCategory(mat.category); // Auto-set category from material master
+        setCurrentCategory(mat.category); 
     } else {
         setCurrentCategory('');
     }
@@ -192,7 +198,7 @@ function StockOrders() {
       material_id: mat.id, 
       name: mat.material_name, 
       qty: currentQty,
-      category: currentCategory // Now fixed to the material master value
+      category: currentCategory 
     }]);
     setCurrentMaterial(''); 
     setCurrentCategory(''); 
@@ -270,10 +276,10 @@ function StockOrders() {
             <label className="small fw-bold text-muted text-uppercase mb-1">Select Material *</label>
             <select className="form-select mb-2" value={currentMaterial} onChange={(e) => handleMaterialChange(e.target.value)}>
               <option value="">-- Choose Item --</option>
-              {materials.map(m => <option key={m.id} value={m.id}>{m.material_name}</option>)}
+              {/* Alphabetical Order implemented here */}
+              {sortedMaterials.map(m => <option key={m.id} value={m.id}>{m.material_name}</option>)}
             </select>
 
-            {/* Situation 1: Category dropdown is now disabled to prevent manual changes */}
             <label className="small fw-bold text-muted text-uppercase mb-1 mt-2">Designated Category</label>
             <select className="form-select mb-2 bg-light shadow-none" value={currentCategory} disabled>
               <option value="">{currentCategory || '-- No Category --'}</option>
@@ -359,7 +365,6 @@ function StockOrders() {
         </div>
       </div>
 
-      {/* VERIFICATION MODAL remains unchanged */}
       {showPasswordModal && (
         <div className="modal show d-block" style={{backgroundColor: 'rgba(0,0,0,0.85)'}}>
           <div className="modal-dialog modal-dialog-centered">
@@ -387,7 +392,6 @@ function StockOrders() {
         </div>
       )}
 
-      {/* EDIT MODAL: Category logic also locked here */}
       {showEditModal && (
         <div className="modal show d-block" style={{backgroundColor: 'rgba(0,0,0,0.7)'}}>
           <div className="modal-dialog modal-lg modal-dialog-centered">
@@ -408,11 +412,11 @@ function StockOrders() {
                         <div className="col-md-7">
                             <select className="form-select form-select-sm" value={currentMaterial} onChange={(e) => handleMaterialChange(e.target.value)}>
                                 <option value="">-- Add Material --</option>
-                                {materials.map(m => <option key={m.id} value={m.id}>{m.material_name}</option>)}
+                                {/* Alphabetical Order implemented here */}
+                                {sortedMaterials.map(m => <option key={m.id} value={m.id}>{m.material_name}</option>)}
                             </select>
                         </div>
                         <div className="col-md-3">
-                            {/* Disabled Category in Edit Modal */}
                             <select className="form-select form-select-sm bg-light shadow-none" value={currentCategory} disabled>
                                 <option value="">{currentCategory || 'Category'}</option>
                             </select>
