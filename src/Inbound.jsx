@@ -74,9 +74,9 @@ function Inbound() {
     if (field === 'material_name') {
         const match = masterMaterials.find(m => m.material_name === value);
         if (match) {
-            updatedList[index].classification = match.classification;
-            updatedList[index].category = match.category;
-            updatedList[index].unit = match.unit_of_measure;
+            updatedList[index].classification = match.classification || '';
+            updatedList[index].category = match.category || '';
+            updatedList[index].unit = match.unit_of_measure || '';
         }
     }
     
@@ -102,81 +102,89 @@ function Inbound() {
     }
   };
 
-  // MENTOR NOTE: Revised logic to handle empty staging rows during finalization
   const processInbound = async (isClosing) => {
-    // 1. Filter out completely empty rows (where no material is selected)
     const itemsToProcess = verificationList.filter(item => item.material_name !== '');
 
-    // 2. Validation: If they filled in a material but forgot the quantity
     if (itemsToProcess.some(item => parseInt(item.arrived_qty) <= 0)) {
         alert("Please ensure all staged rows have a valid Arrived Quantity.");
         return;
     }
 
-    // 3. Validation: If trying to save record but staging area is empty
     if (!isClosing && itemsToProcess.length === 0) {
         alert("No new items staged. Please select a material to save.");
         return;
     }
 
-    // 4. Confirmation Pop-up logic
-    if (isClosing) {
-        const confirmClose = window.confirm(
-            "Are you sure to save and close this SO?\n\nNote: This will declared as Completed Stock Order."
-        );
-        if (!confirmClose) return;
-    } else {
-        if (!window.confirm(`Save these entries to Inventory under ${selectedOrderNo}?`)) return;
-    }
+    const confirmMsg = isClosing 
+        ? "Are you sure to save and close this SO?\n\nNote: This will be declared as Completed." 
+        : `Save these entries to Inventory under ${selectedOrderNo}?`;
+
+    if (!window.confirm(confirmMsg)) return;
 
     setLoading(true);
 
     try {
-        // Only loop through valid items
         for (const item of itemsToProcess) {
-          const { data: existing } = await supabase
+          // CLEANING DATA: Trim spaces to prevent DB mismatch errors
+          const cleanName = item.material_name.trim();
+          const cleanCat = (item.category || 'Uncategorized').trim();
+          const cleanClass = (item.classification || '').trim();
+
+          // SEARCH: Check if this item already exists in the CURRENT SO
+          const { data: existing, error: fetchError } = await supabase
             .from('inventory')
             .select('*')
-            .eq('item_name', item.material_name)
-            .eq('category', item.category)
-            .single();
+            .eq('item_name', cleanName)
+            .eq('reference_so', selectedOrderNo) 
+            .maybeSingle();
+
+          if (fetchError) throw fetchError;
 
           if (existing) {
-            await supabase.from('inventory')
+            // UPDATE: Add to existing qty
+            const { error: updError } = await supabase.from('inventory')
               .update({ 
                 qty: existing.qty + parseInt(item.arrived_qty),
-                reference_so: selectedOrderNo,
-                classification: item.classification 
+                classification: cleanClass,
+                category: cleanCat
               })
               .eq('id', existing.id);
+            if (updError) throw updError;
           } else {
-            await supabase.from('inventory').insert([{
-              item_name: item.material_name,
-              category: item.category,
-              classification: item.classification,
+            // INSERT: New row in inventory
+            const { error: insError } = await supabase.from('inventory').insert([{
+              item_name: cleanName,
+              category: cleanCat,
+              classification: cleanClass,
               qty: parseInt(item.arrived_qty),
-              item_type: item.unit,
+              item_type: item.unit || '',
               reference_so: selectedOrderNo,
               date_of_arrival: new Date().toISOString().split('T')[0]
             }]);
+            
+            if (insError) throw insError;
           }
         }
 
         if (isClosing) {
-            await supabase.from('stock_orders').update({ status: 'Stock Order Closed Inbound' }).eq('id', selectedOrderId);
+            const { error: statusError } = await supabase.from('stock_orders')
+                .update({ status: 'Stock Order Closed Inbound' })
+                .eq('id', selectedOrderId);
+            if (statusError) throw statusError;
+            
             alert(`Success: ${selectedOrderNo} is now CLOSED.`);
             setSelectedOrderId('');
             setVerificationList([]);
             setSavedItems([]);
         } else {
             alert(`Success: Items recorded. ${selectedOrderNo} remains OPEN.`);
-            // Reset staging area to one empty row after saving
             setVerificationList([{ material_name: '', classification: '', category: '', arrived_qty: 0, unit: '' }]);
             fetchSavedItems(selectedOrderNo);
         }
         fetchArrivedOrders();
     } catch (err) {
-        alert("An error occurred.");
+        console.error("Inbound Error Details:", err);
+        alert(`Inbound Failed: ${err.message || "Unknown error"}`);
     } finally {
         setLoading(false);
     }
@@ -221,8 +229,8 @@ function Inbound() {
                             {masterMaterials.map((m, i) => <option key={i} value={m.material_name}>{m.material_name}</option>)}
                           </select>
                         </td>
-                        <td><select className="form-select form-select-sm bg-light" value={item.classification} disabled><option>{item.classification || '--'}</option></select></td>
-                        <td><select className="form-select form-select-sm bg-light" value={item.category} disabled><option>{item.category || '--'}</option></select></td>
+                        <td><input type="text" className="form-control form-control-sm bg-light" value={item.classification} readOnly /></td>
+                        <td><input type="text" className="form-control form-control-sm bg-light" value={item.category} readOnly /></td>
                         <td><input type="number" className="form-control form-control-sm text-center fw-bold" value={item.arrived_qty} onChange={(e) => handleInputChange(idx, 'arrived_qty', e.target.value)} /></td>
                         <td className="text-center">
                           <button className="btn btn-sm text-success border-0" onClick={addRow}><i className="bi bi-plus-circle-fill fs-5"></i></button>
